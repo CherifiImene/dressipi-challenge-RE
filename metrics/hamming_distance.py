@@ -126,8 +126,21 @@ class BinaryTree:
               print(root.value)
 
             self.inorder(root.r_child)
-    def k_inorder(self):
-        pass
+    def k_inorder(self,root,k,nodes):
+        
+        if root != None :
+            self.k_inorder(root.l_child,k,nodes)
+            if len(nodes) == k:
+              return
+            # case of duplicates
+            for _ in range(root.occurence):
+              nodes.append(root.value)
+              if len(nodes) == k:
+                return
+            
+            self.k_inorder(root.r_child,k ,nodes)
+            if len(nodes) == k:
+              return
     
     def inorder_successor(self,node):
         # if there's a right child
@@ -199,6 +212,7 @@ class HammingDistance:
       self.results.add_child(result)
     
   def get_best_k(self,k):
-    first_k_results = self.results\
-                          .k_inorder(k)
+    first_k_results = []
+    self.results\
+        .k_inorder(self.results.root,k,first_k_results)
     return first_k_results
