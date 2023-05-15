@@ -69,16 +69,35 @@ class DataPipeline:
         os.rename(dest+'/'+spark_out,dest+'/'+dest_file)
 
     #---------------------------#
-    
-    def preprocess_dataset(self,clean_data=False):
+    def preprocess_sessions(self,clean_data=False):
+        
+        # clean dataset 
+        # (remove duplicates from features)
+        if clean_data:
+          self.clean_dataset()
 
-        # 1. clean dataset 
+        # Load sessions
+        sessions = self.extract(table="train_sessions.csv")
+
+        # order items by date
+        # handle long sessions
+        # handle medium and small session
+        
+
+        # Transform sessions
+        # into a vector of features
+
+        # Save the new data
+
+        pass
+    def preprocess_candidate_items(self,clean_data=False):
+
+        # clean dataset 
         # (remove duplicates from features)
         if clean_data:
           self.clean_dataset()
         
-        # 2. Load candidate items 
-        # transform them to (item_id, features_vector)
+        # 1. Extract candidate items 
         candidates = self.extract(table="candidate_items.csv").collect()
         clean_features = self.load(table="clean_item_features/features.csv")
 
@@ -95,20 +114,16 @@ class DataPipeline:
           
           preprocessed_candidates.append([candidate.item_id,
                                           num_features])
+        
+        # 3. transform them to (item_id, features_vector)
         preprocessed_df = self.create_rdd(preprocessed_candidates)
 
-        # 5. save new data
+        # 4. save new data
         self.save(data=preprocessed_df,
                   dest_folder="prep_candidates",
-                  dest_file="candidates")
+                  dest_file="candidates.csv")
         
-        # 3. transform item to vector of features
-
-        # 4. remove duplicate vectors
-
-       
-
-        pass
+        
     
     def clean_dataset(self):
         # remove duplicate category ids in features
@@ -120,15 +135,9 @@ class DataPipeline:
         
         #data.select(count(data.feature_category_id)).show()
         #data.select(count(data.item_id)).show()
-        
-        
+          
         # save cleaned features
-        dest = os.path.join(self.path_to_data,
-                            "clean_item_features")
-        data.write.option("header",True)\
-            .csv(dest)
-        # rename saved file
-        spark_out = list(filter(
-            lambda filename: filename.startswith('part-'),
-            os.listdir(dest)))[0]
-        os.rename(dest+'/'+spark_out,dest+'/'+'features.csv')
+        self.save(data=data,
+                  dest_folder="clean_item_features",
+                  dest_file="features.csv")
+    
