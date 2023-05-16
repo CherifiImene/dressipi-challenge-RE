@@ -141,6 +141,8 @@ class DataPipeline:
         print(f"total features: {total_features}")
         pre_features = []
 
+        # the instructions to be run
+        # inside the normal nested loop
         def _initialize_features_accumulator(item):
           item_features = features\
                           .select(["item_id",
@@ -150,18 +152,18 @@ class DataPipeline:
                           .collect()
           num_features = [0]*(total_features+1) # 1 for the item_id, 73 for the features
           num_features[0] = item.item_id
-          # this expression is to be corrected
-          pool.map(lambda feature:num_features[int(feature.feature_category_id)]+1,
-                    item_features)
-          return item_features, num_features
-        
-        def increment_features_accumulator(feature,**args):
-          num_features = args["num_features"]
-          num_features[int(feature.feature_category_id)] += 1
-          
 
-        results = pool\
-                  .imap(_initialize_features_accumulator,
+          def increment_features_accumulator(feature):
+            num_features[int(feature.feature_category_id)] += 1
+          
+          pool.map(increment_features_accumulator,
+                    item_features)
+          return num_features
+        
+         
+
+        pre_features = pool\
+                  .map(_initialize_features_accumulator,
                         items,len(items)
                         )
         #for item in items:
