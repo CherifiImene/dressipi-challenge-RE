@@ -13,6 +13,15 @@ from pyspark.sql.types import(
      )
 
 import os
+import time
+import multiprocessing.pool
+
+
+
+
+global pool
+pool = multiprocessing.pool.ThreadPool(100)
+
 spark = SparkSession.builder\
         .master("local")\
         .appName("Dressipi-SBRS")\
@@ -80,14 +89,16 @@ class DataPipeline:
           self.clean_dataset()
 
         # Load sessions & clean features
+        # order items by date
         sessions = self.extract(table="train_sessions.csv")\
                        .orderBy(["session_id","date"])
         features = self.extract(table="preprocessed_features/features.csv")
 
-        # order items by date
+        
         # handle long sessions
         # handle medium and small session
-        session_ids = sessions.select(countDistinct("session_id"))\
+        session_ids = sessions.dropDuplicates("session_id")\
+                              .select("session_id")\
                               .collect()
         
         # preprocessed sessions will be stored here
@@ -130,7 +141,7 @@ class DataPipeline:
         print(f"total features: {total_features}")
         pre_features = []
 
-        for item in items:
+        def _initialize_features_accumulator(item):
           item_features = features\
                           .select(["item_id",
                                   "feature_category_id"]
@@ -139,10 +150,26 @@ class DataPipeline:
                           .collect()
           num_features = [0]*(total_features+1) # 1 for the item_id, 73 for the features
           num_features[0] = item.item_id
-          for feature in item_features:
-            num_features[int(feature.feature_category_id)] += 1
+          # this expression is to be corrected
+          pool.map(lambda feature:num_features[int(feature.feature_category_id)]+1,
+                    item_features)
+          return item_features, num_features
+        
+        def increment_features_accumulator(feature,**args):
+          num_features = args["num_features"]
+          num_features[int(feature.feature_category_id)] += 1
           
-          pre_features.append([num_features])
+
+        results = pool\
+                  .imap(_initialize_features_accumulator,
+                        items,len(items)
+                        )
+        #for item in items:
+        #  item_features, num_features = _initialize_features_accumulator()
+          #for feature in item_features:
+          #  num_features[int(feature.feature_category_id)] += 1
+          
+          #pre_features.append([num_features])
           
         # 3. transform them to (item_id, features_vector)
         preprocessed_df = self.create_rdd(pre_features)
