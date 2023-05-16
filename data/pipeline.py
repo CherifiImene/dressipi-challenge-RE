@@ -71,7 +71,7 @@ class DataPipeline:
 
     #---------------------------#
     def preprocess_sessions(self,clean_data=False,
-                            dest_folde="preprocesse_sessions",
+                            dest_folder="preprocesse_sessions",
                             dest_file="train_sessions.csv"):
         
         # clean dataset 
