@@ -1,7 +1,6 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import(
     col, 
-    Row,
     count, 
     countDistinct
 )
@@ -14,35 +13,37 @@ from pyspark.sql.types import(
      )
 
 import os
-
-class DataPipeline:
-    spark = SparkSession.builder\
+spark = SparkSession.builder\
         .master("local")\
         .appName("Dressipi-SBRS")\
         .config('spark.ui.port', '4050')\
         .getOrCreate()
+
+class DataPipeline:
         
-    def __init__(self,path_to_data) -> None:
+    def __init__(self,path_to_data,spark_session=spark) -> None:
 
         self.path_to_data = path_to_data
+        self.spark = spark_session
         pass
     
     #------- ETL -------#
     def extract(self,table="train_sessions.csv"):
         table_path = os.path.join(self.path_to_data,table)
-        data = spark.read.format("csv")\
+        data = self.spark.read.format("csv")\
                     .option("header", "true")\
                     .load(table_path)
         return data
     
     def create_rdd(self,data):
-        schema = StructType([
-                  StructField('item_id', StringType(), True),#column_name,data_type,nullable,metadata
-                  StructField('features', ArrayType(IntegerType()), False),
-                  ])
-        #empty_rdd = spark.sparkContext.emptyRDD()
+        structures = []
+        
+        #column_name,data_type,nullable,metadata
+        structures.append(StructField('item_id', StringType(), False))
+        structures.extend([StructField(f'{i}', IntegerType(), True) for i in range(1,74)])
 
-        rdd = spark.createDataFrame(data,schema)
+        schema = StructType(structures)
+        rdd = self.spark.createDataFrame(data,schema)
         return rdd
 
     def transform(self):
@@ -69,61 +70,88 @@ class DataPipeline:
         os.rename(dest+'/'+spark_out,dest+'/'+dest_file)
 
     #---------------------------#
-    def preprocess_sessions(self,clean_data=False):
+    def preprocess_sessions(self,clean_data=False,
+                            dest_folde="preprocesse_sessions",
+                            dest_file="train_sessions.csv"):
         
         # clean dataset 
         # (remove duplicates from features)
         if clean_data:
           self.clean_dataset()
 
-        # Load sessions
-        sessions = self.extract(table="train_sessions.csv")
+        # Load sessions & clean features
+        sessions = self.extract(table="train_sessions.csv")\
+                       .orderBy(["session_id","date"])
+        features = self.extract(table="preprocessed_features/features.csv")
 
         # order items by date
         # handle long sessions
         # handle medium and small session
+        session_ids = sessions.select(countDistinct("session_id"))\
+                              .collect()
         
+        # preprocessed sessions will be stored here
+        pre_sessions = self.create_rdd(data=spark.sparkContext.emptyRDD())
 
-        # Transform sessions
-        # into a vector of features
+        for session_id in session_ids:
+          session_items = sessions.select(["session_id","item_id"])\
+                                  .where(f"session_id == {session_id.session_id}")
+          item_features = session_items.alias('sessions')\
+                       .select(["session_id","item_id"])\
+                       .join(features.alias("f"),
+                             session_items.item_id == features.item_id,
+                             "full")\
+                       .drop(["sessions.item_id","f.item_id"])
+          # Transform sessions
+          # into a vector of features
+          pre_session = item_features.groupBy(["session_id"])\
+                       .rdd.reduceByKey(lambda x,y: x+y )
+          pre_sessions = pre_sessions.union(pre_session)
 
         # Save the new data
+        self.save(data=pre_sessions,
+                  dest_folder=dest_folder,
+                  dest_file=dest_file)
 
         pass
-    def preprocess_candidate_items(self,clean_data=False):
+    
+    def preprocess_features(self,
+                            features_path="clean_item_features/features.csv",
+                            dest_folder="preprocessed_features",
+                            dest_file="features.csv"):
+      
+        features = self.extract(table=features_path)
+        items = features.dropDuplicates(["item_id"])\
+                        .select("item_id")\
+                        .collect()
+        total_features = features\
+                          .select(countDistinct("feature_category_id"))\
+                          .collect()[0][0]
+        print(f"total features: {total_features}")
+        pre_features = []
 
-        # clean dataset 
-        # (remove duplicates from features)
-        if clean_data:
-          self.clean_dataset()
-        
-        # 1. Extract candidate items 
-        candidates = self.extract(table="candidate_items.csv").collect()
-        clean_features = self.load(table="clean_item_features/features.csv")
-
-        preprocessed_candidates = []
-
-        for candidate in candidates:
-          item_features = clean_features.select(
-              ["item_id","feature_category_id"]
-              ).where(f"item_id == {candidate.item_id}")\
-              .collect()
-          num_features = [0]*len(item_features)
+        for item in items:
+          item_features = features\
+                          .select(["item_id",
+                                  "feature_category_id"]
+                          )\
+                          .where(f"item_id = {item.item_id}")\
+                          .collect()
+          num_features = [0]*(total_features+1) # 1 for the item_id, 73 for the features
+          num_features[0] = item.item_id
           for feature in item_features:
-            num_features[feature.feature_category_id-1] += 1
+            num_features[int(feature.feature_category_id)] += 1
           
-          preprocessed_candidates.append([candidate.item_id,
-                                          num_features])
-        
+          pre_features.append([num_features])
+          
         # 3. transform them to (item_id, features_vector)
-        preprocessed_df = self.create_rdd(preprocessed_candidates)
+        preprocessed_df = self.create_rdd(pre_features)
 
         # 4. save new data
         self.save(data=preprocessed_df,
-                  dest_folder="prep_candidates",
-                  dest_file="candidates.csv")
-        
-        
+                  dest_folder=dest_folder,
+                  dest_file=dest_file)
+
     
     def clean_dataset(self):
         # remove duplicate category ids in features
