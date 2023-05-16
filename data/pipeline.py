@@ -20,7 +20,7 @@ import multiprocessing.pool
 
 
 global pool
-pool = multiprocessing.pool.ThreadPool(100)
+pool = multiprocessing.pool.ThreadPool(1000)
 
 spark = SparkSession.builder\
         .master("local")\
@@ -79,6 +79,28 @@ class DataPipeline:
         os.rename(dest+'/'+spark_out,dest+'/'+dest_file)
 
     #---------------------------#
+    def preprocess_long_session(self,session):
+      
+      items = session.orderBy(['date'])\
+                     .select("item_id")
+      
+      pre_features = self.extract(table="preprocessed_features/features.csv")
+      
+      recent_items = items.collect()[-1:-20]
+      item_features = items.join(pre_features,
+                                 items.item_id==pre_features.item_id,
+                                 "right"
+                                 )
+      # filter based on the last 20 consumed items
+      # if the similarity between an older item
+      # and the vector of 20 recent items 
+      # is < treshold
+      # remove the item
+      # elsewhere
+      # accumulate its features to the current features
+      
+      pass
+
     def preprocess_sessions(self,clean_data=False,
                             dest_folder="preprocesse_sessions",
                             dest_file="train_sessions.csv"):
@@ -96,6 +118,7 @@ class DataPipeline:
 
         
         # handle long sessions
+        
         # handle medium and small session
         session_ids = sessions.dropDuplicates("session_id")\
                               .select("session_id")\
@@ -103,8 +126,9 @@ class DataPipeline:
         
         # preprocessed sessions will be stored here
         pre_sessions = self.create_rdd(data=spark.sparkContext.emptyRDD())
-
-        for session_id in session_ids:
+        
+        # function to run in parallel
+        def reduce_sessions(session_id):
           session_items = sessions.select(["session_id","item_id"])\
                                   .where(f"session_id == {session_id.session_id}")
           item_features = session_items.alias('sessions')\
@@ -118,6 +142,23 @@ class DataPipeline:
           pre_session = item_features.groupBy(["session_id"])\
                        .rdd.reduceByKey(lambda x,y: x+y )
           pre_sessions = pre_sessions.union(pre_session)
+
+
+          pool.map(reduce_sessions,session_ids,chunksize=len(session_ids))
+        """for session_id in session_ids:
+          session_items = sessions.select(["session_id","item_id"])\
+                                  .where(f"session_id == {session_id.session_id}")
+          item_features = session_items.alias('sessions')\
+                       .select(["session_id","item_id"])\
+                       .join(features.alias("f"),
+                             session_items.item_id == features.item_id,
+                             "full")\
+                       .drop(["sessions.item_id","f.item_id"])
+          # Transform sessions
+          # into a vector of features
+          pre_session = item_features.groupBy(["session_id"])\
+                       .rdd.reduceByKey(lambda x,y: x+y )
+          pre_sessions = pre_sessions.union(pre_session)"""
 
         # Save the new data
         self.save(data=pre_sessions,
@@ -144,6 +185,7 @@ class DataPipeline:
         # the instructions to be run
         # inside the normal nested loop
         def _initialize_features_accumulator(item):
+          #print(f"item: {item.item_id}")
           item_features = features\
                           .select(["item_id",
                                   "feature_category_id"]
@@ -154,7 +196,9 @@ class DataPipeline:
           num_features[0] = item.item_id
 
           def increment_features_accumulator(feature):
+            #print(f"feature: {feature.feature_category_id}")
             num_features[int(feature.feature_category_id)] += 1
+            #print(f"num_features: {num_features}")
           
           pool.map(increment_features_accumulator,
                     item_features)
