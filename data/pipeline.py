@@ -163,7 +163,7 @@ class DataPipeline:
                                   .count()\
                                   .fillna(0)
 
-        # 4. save new data
+        # save new data
         self.save(data=preprocessed_df,
                   dest_folder=dest_folder,
                   dest_file=dest_file)
