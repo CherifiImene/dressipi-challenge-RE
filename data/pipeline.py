@@ -19,6 +19,10 @@ from functools import partial
 
 
 
+
+#global pool
+#pool = multiprocessing.pool.ThreadPool(1000)
+
 spark = SparkSession.builder\
         .master("local")\
         .appName("Dressipi-SBRS")\
@@ -140,23 +144,6 @@ class DataPipeline:
                        .rdd.reduceByKey(lambda x,y: x+y )
           pre_sessions = pre_sessions.union(pre_session)
 
-
-         
-        """for session_id in session_ids:
-          session_items = sessions.select(["session_id","item_id"])\
-                                  .where(f"session_id == {session_id.session_id}")
-          item_features = session_items.alias('sessions')\
-                       .select(["session_id","item_id"])\
-                       .join(features.alias("f"),
-                             session_items.item_id == features.item_id,
-                             "full")\
-                       .drop(["sessions.item_id","f.item_id"])
-          # Transform sessions
-          # into a vector of features
-          pre_session = item_features.groupBy(["session_id"])\
-                       .rdd.reduceByKey(lambda x,y: x+y )
-          pre_sessions = pre_sessions.union(pre_session)"""
-
         # Save the new data
         self.save(data=pre_sessions,
                   dest_folder=dest_folder,
@@ -170,39 +157,16 @@ class DataPipeline:
                             dest_file="features.csv"):
       
         features = self.extract(table=features_path)
-        items = features.dropDuplicates(["item_id"])\
-                        .select("item_id")\
-                        .collect()
-        total_features = features\
-                          .select(countDistinct("feature_category_id"))\
-                          .collect()[0][0]
-        print(f"total features: {total_features}")
-        
-
-        item_dict = defaultdict(lambda : None)
-        
-        features.foreach(partial(self._vectorize_features,
-                                  item_dic=item_dict,
-                                  nb_features=total_features))
-        
-        pre_features = list(item_dict.values())
-        preprocessed_df = self.create_rdd(pre_features)
+        # transforms the features into a sparse vector
+        preprocessed_df = features.groupBy(["item_id"])\
+                                  .pivot("feature_category_id")\
+                                  .count()\
+                                  .fillna(0)
 
         # 4. save new data
         self.save(data=preprocessed_df,
                   dest_folder=dest_folder,
                   dest_file=dest_file)
-
-    def _vectorize_features(self,
-                            feature,
-                            item_dic,
-                            nb_features):
-      if not item_dic[feature.item_id]:
-        
-        item_dic[feature.item_id] = [0]*(nb_features+1)# 1 for the item_id, 73 for the features
-        item_dic[feature.item_id][0] = feature.item_id
-      
-      item_dic[feature.item_id][int(feature.item_category_id)] += 1
       
       
     def clean_dataset(self):
