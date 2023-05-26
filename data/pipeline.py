@@ -11,16 +11,13 @@ from pyspark.sql.types import(
      ArrayType,
      IntegerType
      )
-
 import os
-import time
-import multiprocessing.pool
+from collections import defaultdict
+from functools import partial
+#import time
+#import multiprocessing.pool
 
 
-
-
-global pool
-pool = multiprocessing.pool.ThreadPool(1000)
 
 spark = SparkSession.builder\
         .master("local")\
@@ -144,7 +141,7 @@ class DataPipeline:
           pre_sessions = pre_sessions.union(pre_session)
 
 
-          pool.map(reduce_sessions,session_ids,chunksize=len(session_ids))
+         
         """for session_id in session_ids:
           session_items = sessions.select(["session_id","item_id"])\
                                   .where(f"session_id == {session_id.session_id}")
@@ -180,44 +177,15 @@ class DataPipeline:
                           .select(countDistinct("feature_category_id"))\
                           .collect()[0][0]
         print(f"total features: {total_features}")
-        pre_features = []
-
-        # the instructions to be run
-        # inside the normal nested loop
-        def _initialize_features_accumulator(item):
-          #print(f"item: {item.item_id}")
-          item_features = features\
-                          .select(["item_id",
-                                  "feature_category_id"]
-                          )\
-                          .where(f"item_id = {item.item_id}")\
-                          .collect()
-          num_features = [0]*(total_features+1) # 1 for the item_id, 73 for the features
-          num_features[0] = item.item_id
-
-          def increment_features_accumulator(feature):
-            #print(f"feature: {feature.feature_category_id}")
-            num_features[int(feature.feature_category_id)] += 1
-            #print(f"num_features: {num_features}")
-          
-          pool.map(increment_features_accumulator,
-                    item_features)
-          return num_features
         
-         
 
-        pre_features = pool\
-                  .map(_initialize_features_accumulator,
-                        items,len(items)
-                        )
-        #for item in items:
-        #  item_features, num_features = _initialize_features_accumulator()
-          #for feature in item_features:
-          #  num_features[int(feature.feature_category_id)] += 1
-          
-          #pre_features.append([num_features])
-          
-        # 3. transform them to (item_id, features_vector)
+        item_dict = defaultdict(lambda : None)
+        
+        features.foreach(partial(self._vectorize_features,
+                                  item_dic=item_dict,
+                                  nb_features=total_features))
+        
+        pre_features = list(item_dict.values())
         preprocessed_df = self.create_rdd(pre_features)
 
         # 4. save new data
@@ -225,7 +193,18 @@ class DataPipeline:
                   dest_folder=dest_folder,
                   dest_file=dest_file)
 
-    
+    def _vectorize_features(self,
+                            feature,
+                            item_dic,
+                            nb_features):
+      if not item_dic[feature.item_id]:
+        
+        item_dic[feature.item_id] = [0]*(nb_features+1)# 1 for the item_id, 73 for the features
+        item_dic[feature.item_id][0] = feature.item_id
+      
+      item_dic[feature.item_id][int(feature.item_category_id)] += 1
+      
+      
     def clean_dataset(self):
         # remove duplicate category ids in features
         data = self.extract(table="item_features.csv")
