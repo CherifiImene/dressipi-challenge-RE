@@ -14,14 +14,7 @@ from pyspark.sql.types import(
 import os
 from collections import defaultdict
 from functools import partial
-#import time
-#import multiprocessing.pool
 
-
-
-
-#global pool
-#pool = multiprocessing.pool.ThreadPool(1000)
 
 spark = SparkSession.builder\
         .master("local")\
@@ -113,43 +106,38 @@ class DataPipeline:
 
         # Load sessions & clean features
         # order items by date
-        sessions = self.extract(table="train_sessions.csv")\
-                       .orderBy(["session_id","date"])
+        sessions_count = self.extract("train_sessions.csv")\
+             .groupBy(["session_id"])\
+             .agg(count(col="item_id").alias("nb_items"))\
+             .sort(col("nb_items"))\
+             .where("nb_items <= 20")
+        sessions = self.extract("train_sessions.csv")
+
+        sessions = sessions.join(sessions_count,
+                      sessions.session_id == sessions_count.session_id,
+                      "leftsemi")
+
+
         features = self.extract(table="preprocessed_features/features.csv")
 
         
         # handle long sessions
         
         # handle medium and small session
-        session_ids = sessions.dropDuplicates("session_id")\
-                              .select("session_id")\
-                              .collect()
+        se_features = sessions.alias("s")\
+                              .join(features.alias("f"),
+                                    features.item_id == sessions.item_id,
+                                    "inner")\
+                              .drop(col("s.item_id"))\
+                              .orderBy("date")\
+                              .groupBy("session_id")\
+                              .avg()
         
-        # preprocessed sessions will be stored here
-        pre_sessions = self.create_rdd(data=spark.sparkContext.emptyRDD())
-        
-        # function to run in parallel
-        def reduce_sessions(session_id):
-          session_items = sessions.select(["session_id","item_id"])\
-                                  .where(f"session_id == {session_id.session_id}")
-          item_features = session_items.alias('sessions')\
-                       .select(["session_id","item_id"])\
-                       .join(features.alias("f"),
-                             session_items.item_id == features.item_id,
-                             "full")\
-                       .drop(["sessions.item_id","f.item_id"])
-          # Transform sessions
-          # into a vector of features
-          pre_session = item_features.groupBy(["session_id"])\
-                       .rdd.reduceByKey(lambda x,y: x+y )
-          pre_sessions = pre_sessions.union(pre_session)
-
         # Save the new data
-        self.save(data=pre_sessions,
+        self.save(data=se_features,
                   dest_folder=dest_folder,
                   dest_file=dest_file)
 
-        pass
     
     def preprocess_features(self,
                             features_path="clean_item_features/features.csv",
@@ -163,7 +151,7 @@ class DataPipeline:
                                   .count()\
                                   .fillna(0)
 
-        # save new data
+        # 4. save new data
         self.save(data=preprocessed_df,
                   dest_folder=dest_folder,
                   dest_file=dest_file)
