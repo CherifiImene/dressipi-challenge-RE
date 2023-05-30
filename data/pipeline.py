@@ -15,7 +15,6 @@ import os
 from collections import defaultdict
 from functools import partial
 
-
 spark = SparkSession.builder\
         .master("local")\
         .appName("Dressipi-SBRS")\
@@ -35,6 +34,7 @@ class DataPipeline:
         table_path = os.path.join(self.path_to_data,table)
         data = self.spark.read.format("csv")\
                     .option("header", "true")\
+                    .option("inferSchema",True)\
                     .load(table_path)
         return data
     
