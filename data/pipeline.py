@@ -123,15 +123,39 @@ class DataPipeline:
         
         # handle long sessions
         
+        
+
+
         # handle medium and small session
         se_features = sessions.alias("s")\
                               .join(features.alias("f"),
                                     features.item_id == sessions.item_id,
                                     "inner")\
                               .drop(col("s.item_id"))\
-                              .orderBy("date")\
                               .groupBy("session_id")\
-                              .avg()
+                              .avg()\
+                              .drop("avg(session_id)","avg(item_id)")
+       
+        # Apply threshold
+        def apply_threshold(reduced_session,threshold=0.4):
+          column_names= ["session_id"]
+          column_names.extend([f"avg({i})" for i in range(1,74)])
+
+          transformed_row = [reduced_session["session_id"]]
+          for column_name in column_names[1:]:
+            if reduced_session[column_name] >= threshold:
+              transformed_row.append(1)
+            else:
+              transformed_row.append(0)
+          return transformed_row
+
+
+        # rename columns
+        column_names= ["session_id"]
+        column_names.extend([f"{i}" for i in range(1,74)])
+
+        se_features = se_features.rdd.map(apply_threshold).toDF(column_names)
+                
         
         # Save the new data
         self.save(data=se_features,
