@@ -3,11 +3,6 @@ import random as rd
 import numpy as np
 from metrics.hamming_distance import HammingDistance
 
-
-class LOF:
-    def __init__(self) -> None:
-        pass
-
 class K_MODES:
     
     def __init__(self,k=2) -> None:
@@ -104,7 +99,9 @@ class K_MODES:
 
       
 
-
+class LOF:
+    def __init__(self) -> None:
+        pass
 
 
 class K_MEDOID:
