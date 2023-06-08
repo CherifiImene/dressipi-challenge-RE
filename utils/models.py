@@ -85,32 +85,45 @@ class K_MODES:
         c_objects[i_cluster].append(item)
       return c_objects, condition
 
-    def _update_modes(self,c_objects):
+    def _update_modes(self,c_objects,
+                      nb_features):
+      
       # Make sure that the modes are numpy array
-      new_modes = []
+      new_modes = np.empty(shape=(self.k,
+                                  nb_features))
+
       for cluster in c_objects.keys():
         items = np.array(c_objects[cluster])
         #print(f"items.shape={items.shape}")
-        nb_items,nb_features = items.shape
+        nb_items, _ = items.shape
 
-        # compute the new mode 
-        n_mode = []
-        for feature in range(nb_features):
-          # validate that the number of categories is at least 2
-          categories = np.unique(items[:,feature])
-          #print(f"categories: {categories}")
-          if len(categories <2):
-            categories = range(2)
-          # add epsilon to avoid division by zero
-          frequencies = [np.count_nonzero(items[:,feature] == category,axis=0)/nb_items\
-                         for category in categories]
-          
-          #print(f"Frequencies: {frequencies}")
-          n_mode.append(np.argmax(frequencies))
+        
+        
+        # validate that the number of categories is at least 2
+        categories = np.unique(items)
+        #print(f"categories: {categories}")
+        if len(categories <2):
+          categories = range(2)
+        
+
+        frequencies = [np.count_nonzero(items == category,axis=0)/nb_items\
+                        for category in categories]
+        
+        n_mode = np.argmax(frequencies,
+                                axis=0)
+        
         assert len(n_mode) == 73, f"Expected mode to be list of features : {len(n_mode)}"
-        new_modes.append(np.array(n_mode))
+        new_modes.append(n_mode)
       
       return np.array(new_modes)
+          
+      
+        
+
+
+      
+
+
           
       
         
