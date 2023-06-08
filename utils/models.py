@@ -9,7 +9,7 @@ class K_MODES:
       self.k = k
     
 
-    def fit(self,X):
+    def fit(self,X,max_iter=50):
       
       # Choose the latest(0) and oldest items(-1)
       # as starting modes
@@ -24,11 +24,13 @@ class K_MODES:
       
       item_shifted = True
       c_objects = None
-      while item_shifted:
+
+      while item_shifted and max_iter>0:
         c_objects, item_shifted = self._assign_objects(X,modes,
                                                        c_objects)
-        modes = self._update_modes(c_objects)
-        print(f"Type(modes): {type(modes)}")
+        modes = self._update_modes(c_objects,X.shape[1])
+        
+        max_iter -= 1
       return c_objects, modes
 
     def _assign_objects(self,X,modes,
@@ -53,7 +55,7 @@ class K_MODES:
               condition = n_cluster != cluster
               print(f"Condition state changed to : {condition}")
             
-            elif (n_cluster != cluster):
+            if (n_cluster != cluster):
               print(f"Item : {index}, Clusters are different: old : {cluster}, new: {n_cluster}")
               # remove from old cluster
 
@@ -85,7 +87,8 @@ class K_MODES:
         c_objects[i_cluster].append(item)
       return c_objects, condition
 
-    def _update_modes(self,c_objects,
+    def _update_modes(self,
+                      c_objects,
                       nb_features):
       
       # Make sure that the modes are numpy array
@@ -95,16 +98,15 @@ class K_MODES:
       for cluster in c_objects.keys():
         items = np.array(c_objects[cluster])
         #print(f"items.shape={items.shape}")
-        nb_items, _ = items.shape
+        nb_items = items.shape[0]
 
         
         
         # validate that the number of categories is at least 2
         categories = np.unique(items)
-        #print(f"categories: {categories}")
+
         if len(categories <2):
           categories = range(2)
-        
 
         frequencies = [np.count_nonzero(items == category,axis=0)/nb_items\
                         for category in categories]
@@ -113,21 +115,6 @@ class K_MODES:
                                 axis=0)
         
         assert len(n_mode) == 73, f"Expected mode to be list of features : {len(n_mode)}"
-        new_modes.append(n_mode)
+        new_modes = np.append(new_modes,[n_mode],axis=0)
       
-      return np.array(new_modes)
-          
-      
-        
-
-
-      
-
-
-          
-      
-        
-
-
-      
-
+      return new_modes
