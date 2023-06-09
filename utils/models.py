@@ -11,10 +11,7 @@ class K_MODES:
 
     def fit(self,X,max_iter=50):
       
-      # Choose the latest(0) and oldest items(-1)
-      # as starting modes
-      # if the number of elements in a cluster is 1
-      # verify wether the cluster can be concatenated with another cluster
+      # initialize the clusters
       modes = self._huang_init(X)
 
       item_shifted = True
