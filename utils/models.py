@@ -15,29 +15,55 @@ class K_MODES:
       # as starting modes
       # if the number of elements in a cluster is 1
       # verify wether the cluster can be concatenated with another cluster
-      modes = np.array([X[0,:],X[-1,:]])
+      modes = self._huang_init(X)
 
-      if self.k >2:
-        modes = np.append(modes,
-                        [rd.choices(X,k=self.k-2)],
-                        axis=0)
-      
       item_shifted = True
       c_objects = None
 
-      while item_shifted and max_iter>0:
+      iters = max_iter
+      while item_shifted and iters>0:
+        print(f"Iteration: {max_iter-iters}")
         c_objects, item_shifted = self._assign_objects(X,modes,
                                                        c_objects)
         modes = self._update_modes(c_objects,X.shape[1])
         
-        max_iter -= 1
+        iters -= 1
       return c_objects, modes
+
+    def _huang_init(self,X):
+      categories = np.unique(X)
+      frequencies = np.array([np.count_nonzero(X == category,axis=0)\
+                        for category in categories])
+      Qs = []
+
+      # initialize the modes
+      for _ in range(self.k):
+        if not Qs:
+          Q = np.array([(np.argmax(frequencies[:,feature])-feature)%len(categories)\
+                for feature in range(frequencies.shape[1])])
+        else:
+          Q = Qs[-1]*-1 + 1
+        
+        Qs.append(Q)
+      # Replace the initial Q 
+      # by their most similar objects in X
+      modes = []
+      for Q in Qs:
+        ipoint = np.argmin([
+            HammingDistance.evaluate(item,Q)
+            for item in X
+        ])
+        modes.append(X[ipoint])
+      return modes
+
+
 
     def _assign_objects(self,X,modes,
                         c_objects=None):
       
       if not c_objects:
-        c_objects, condition = self._first_allocation(X,modes)
+        c_objects = self._first_allocation(X,modes)
+        condition = True
       else:
         clusters = range(self.k)
         condition = False
@@ -49,17 +75,18 @@ class K_MODES:
             distances = [HammingDistance\
                       .evaluate(item,
                                 modes[c]) for c in clusters]
-            n_cluster = np.argmax(distances)
+            n_cluster = np.argmin(distances)
             
             if not condition:
               condition = n_cluster != cluster
-              print(f"Condition state changed to : {condition}")
             
             if (n_cluster != cluster):
               print(f"Item : {index}, Clusters are different: old : {cluster}, new: {n_cluster}")
               # remove from old cluster
 
-              '''Issue while using del to delete the item, they are not being deleted '''
+              '''Issue while using del to delete the item, 
+              they are not being deleted when 
+              the items are in the middle of the array'''
               
               c_objects[cluster][index] = c_objects[cluster][-1]
               c_objects[cluster][-1] = -1
@@ -71,50 +98,42 @@ class K_MODES:
     
     def _first_allocation(self,X,modes):
       c_objects = {cluster: [] for cluster in range(self.k)}
-      condition = True
       
       for item in X:     
-        i_cluster = -1
-        min_dist = inf       
-        for cluster in range(self.k):
-          distance = HammingDistance\
+        distances = [HammingDistance\
                     .evaluate(item,
                               modes[cluster])
-
-          if distance < min_dist:
-            min_dist = distance
-            i_cluster = cluster
+                    for cluster in range(self.k)]     
+        
+        i_cluster = np.argmin(distances)
         c_objects[i_cluster].append(item)
-      return c_objects, condition
+      return c_objects
 
     def _update_modes(self,
                       c_objects,
                       nb_features):
       
       # Make sure that the modes are numpy array
-      new_modes = np.empty(shape=(self.k,
-                                  nb_features))
+      new_modes = []
 
       for cluster in c_objects.keys():
         items = np.array(c_objects[cluster])
-        #print(f"items.shape={items.shape}")
-        nb_items = items.shape[0]
-
         
-        
+        print(f"cluster: {cluster}, items: {len(items)}")
         # validate that the number of categories is at least 2
         categories = np.unique(items)
 
         if len(categories <2):
           categories = range(2)
 
-        frequencies = [np.count_nonzero(items == category,axis=0)/nb_items\
+        frequencies = [np.count_nonzero(items == category,axis=0)\
                         for category in categories]
         
         n_mode = np.argmax(frequencies,
                                 axis=0)
         
         assert len(n_mode) == 73, f"Expected mode to be list of features : {len(n_mode)}"
-        new_modes = np.append(new_modes,[n_mode],axis=0)
+        new_modes.append(n_mode)
       
-      return new_modes
+     
+      return np.array(new_modes)
