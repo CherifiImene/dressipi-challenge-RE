@@ -18,6 +18,8 @@ from collections import defaultdict
 from functools import partial
 import pandas as pd
 
+from metrics.hamming_distance import HammingDistance
+from utils.models import K_MODES
 
 spark = SparkSession.builder\
         .master("local")\
@@ -44,8 +46,9 @@ class DataPipeline:
         structures = []
           
         #column_name,data_type,nullable,metadata
-        structures.append(StructField('session_id', StringType(), False))
-        structures.extend([StructField(f'{i}', IntegerType(), True) for i in range(1,74)])
+        structures.append(StructField('session_id', IntegerType(), False))
+        structures.extend([StructField(feature, IntegerType(), True)\
+                           for feature in features.columns[1:]])
 
         schema = StructType(structures)
         return schema
@@ -84,29 +87,40 @@ class DataPipeline:
             os.listdir(dest)))[0]
         os.rename(dest+'/'+spark_out,dest+'/'+dest_file)
 
-    #---------------------------#
-    def transform_rows(row):
-      values = np.array(list(row.asDict().values()))
-      return values
+    #--------------------------------------------------------------------------#
     
     @pandas_udf(returnType=schema, functionType=PandasUDFType.GROUPED_MAP)
     def preprocess_long_session(self,session):
       # The session variable has all the item
       # consumed during a session
-      columns = [f"{feature}" for feature in range(1,74)]
-      X = session.loc[:,columns].values # returns a numpy array
+      session = session.sort_values(by=["date"],
+                                    ascending=False)\
+                      .drop(["date"],
+                            axis=1)
+
+      X = session.loc[:,session.columns[1:]].values # returns a numpy array
       kmodes = K_MODES(k=2)
       max_iter= session.shape[0]
       c_objects, modes = kmodes.fit(X=X,max_iter=max_iter)
 
       # return the mode of the cluster 
-      # that contains the last 20 items
+      # that contains the last 10 items
       # Assuming that the latter are 
       # more relevant
+      x = session.loc[0,session.columns[1:]].values
+      clean_data_cluster = 0
+      clean_data_cluster += np.argmin([HammingDistance.evaluate(x,modes[0]),
+                                      HammingDistance.evaluate(x,modes[1]),
+                                          ])
 
-
-
-      df = df.rename(columns={"value1":"avg_min1","value2":"avg_min2"})
+      #clean_data_cluster = (clean_data_cluster >= 3)*1
+      
+      # concatenate the mode with the session_id
+      row = np.array([session.loc[0,"session_id"]])
+      row = np.concatenate((row,modes[clean_data_cluster]),axis=0)
+      
+      df = pd.DataFrame(data=[row],
+                        columns=session.columns)
       return df
       
 
