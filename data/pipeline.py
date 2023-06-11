@@ -2,7 +2,9 @@ from pyspark.sql import SparkSession
 from pyspark.sql.functions import(
     col, 
     count, 
-    countDistinct
+    countDistinct,
+    pandas_udf,
+    PandasUDFType
 )
 from pyspark.sql.types import(
      StructType,
@@ -14,6 +16,8 @@ from pyspark.sql.types import(
 import os
 from collections import defaultdict
 from functools import partial
+import pandas as pd
+
 
 spark = SparkSession.builder\
         .master("local")\
@@ -22,14 +26,32 @@ spark = SparkSession.builder\
         .getOrCreate()
 
 class DataPipeline:
+    schema = StructType([])
         
     def __init__(self,path_to_data,spark_session=spark) -> None:
 
         self.path_to_data = path_to_data
         self.spark = spark_session
-        pass
+        
+        self.schema = self.pre_sessions_schema
     
-    #------- ETL -------#
+
+    @property
+    def pre_sessions_schema(self):
+
+        features = self.extract(table="preprocessed_features/features.csv")
+        
+        structures = []
+          
+        #column_name,data_type,nullable,metadata
+        structures.append(StructField('session_id', StringType(), False))
+        structures.extend([StructField(f'{i}', IntegerType(), True) for i in range(1,74)])
+
+        schema = StructType(structures)
+        return schema
+
+
+    #--------------------------------- ETL -------------------------------------#
     def extract(self,table="train_sessions.csv"):
         table_path = os.path.join(self.path_to_data,table)
         data = self.spark.read.format("csv")\
@@ -39,18 +61,8 @@ class DataPipeline:
         return data
     
     def create_rdd(self,data):
-        structures = []
-        
-        #column_name,data_type,nullable,metadata
-        structures.append(StructField('item_id', StringType(), False))
-        structures.extend([StructField(f'{i}', IntegerType(), True) for i in range(1,74)])
-
-        schema = StructType(structures)
-        rdd = self.spark.createDataFrame(data,schema)
-        return rdd
-
-    def transform(self):
-        pass
+        ddl_str = "session_id str,"
+        return ddl_str
     
     def load(self,clean_data_path="train_sessions.csv"):
 
@@ -73,27 +85,30 @@ class DataPipeline:
         os.rename(dest+'/'+spark_out,dest+'/'+dest_file)
 
     #---------------------------#
+    def transform_rows(row):
+      values = np.array(list(row.asDict().values()))
+      return values
+    
+    @pandas_udf(returnType=schema, functionType=PandasUDFType.GROUPED_MAP)
     def preprocess_long_session(self,session):
+      # The session variable has all the item
+      # consumed during a session
+      columns = [f"{feature}" for feature in range(1,74)]
+      X = session.loc[:,columns].values # returns a numpy array
+      kmodes = K_MODES(k=2)
+      max_iter= session.shape[0]
+      c_objects, modes = kmodes.fit(X=X,max_iter=max_iter)
+
+      # return the mode of the cluster 
+      # that contains the last 20 items
+      # Assuming that the latter are 
+      # more relevant
+
+
+
+      df = df.rename(columns={"value1":"avg_min1","value2":"avg_min2"})
+      return df
       
-      items = session.orderBy(['date'])\
-                     .select("item_id")
-      
-      pre_features = self.extract(table="preprocessed_features/features.csv")
-      
-      recent_items = items.collect()[-1:-20]
-      item_features = items.join(pre_features,
-                                 items.item_id==pre_features.item_id,
-                                 "right"
-                                 )
-      # filter based on the last 20 consumed items
-      # if the similarity between an older item
-      # and the vector of 20 recent items 
-      # is < treshold
-      # remove the item
-      # elsewhere
-      # accumulate its features to the current features
-      
-      pass
 
     def preprocess_sessions(self,clean_data=False,
                             dest_folder="preprocesse_sessions",
@@ -122,9 +137,9 @@ class DataPipeline:
 
         
         # handle long sessions
+        # We consider as long session
+        # a session that has more than 10 items
         
-        
-
 
         # handle medium and small session
         se_features = sessions.alias("s")\
