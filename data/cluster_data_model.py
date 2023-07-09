@@ -1,3 +1,23 @@
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import(
+    col, 
+    count, 
+    countDistinct,
+    pandas_udf,
+    PandasUDFType
+)
+from pyspark.sql.types import(
+     StructType,
+     StructField,
+     FloatType,
+     IntegerType
+     )
+import os
+import pandas as pd
+
+from metrics.hamming_distance import HammingDistance
+from utils.models import K_MODES
+
 class ClDataModel:
     """
     This class is responsible for dividing the sessions
