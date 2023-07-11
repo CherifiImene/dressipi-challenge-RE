@@ -3,12 +3,25 @@ import random as rd
 import numpy as np
 from metrics.hamming_distance import HammingDistance
 
+
+# Updated this class to handle 
+# the following format of inputs:
+# C0,C1..,Ck, F0,F1,...,Fn 
+# where Ci is a column that 
+# shouldn't be considered in the clustering
+# instead of 
+# F0,F1,...,Fn 
+
 class K_MODES:
 
-    def __init__(self,k=2) -> None:
+    def __init__(self,k=2,index_first_feature=0) -> None:
+      """
+      k: number of clusters
+      index_first_feature: index from which the categorical columns start
+      """
       # verify k>=2
       self.k = k
-
+      self.iff = index_first_feature
 
     def fit(self,X,max_iter=50):
 
@@ -32,8 +45,8 @@ class K_MODES:
       return c_objects, modes
 
     def _huang_init(self,X):
-      categories = np.unique(X)
-      frequencies = np.array([np.count_nonzero(X == category,axis=0)\
+      categories = np.unique(X[:,self.iff:])
+      frequencies = np.array([np.count_nonzero(X[:,self.iff:] == category,axis=0)\
                         for category in categories])
 
       Qs = []
@@ -53,7 +66,7 @@ class K_MODES:
       for Q in Qs:
         ipoint = np.argmin([
             HammingDistance.evaluate(item,Q)
-            for item in X
+            for item in X[:,self.iff:]
         ])
         modes.append(X[ipoint])
       return modes
@@ -75,7 +88,7 @@ class K_MODES:
 
           for index,item in enumerate(items):
             distances = [HammingDistance\
-                      .evaluate(item,
+                      .evaluate(item[self.iff:],
                                 modes[c]) for c in clusters]
             n_cluster = np.argmin(distances)
 
@@ -101,7 +114,7 @@ class K_MODES:
     def _first_allocation(self,X,modes):
       c_objects = {cluster: [] for cluster in range(self.k)}
 
-      for item in X:
+      for item in X[:,self.iff:]:
         distances = [HammingDistance\
                     .evaluate(item,
                               modes[cluster])
@@ -129,12 +142,12 @@ class K_MODES:
 
         print(f"cluster: {cluster}, items: {len(items)}")
         # validate that the number of categories is at least 2
-        categories = np.unique(items)
+        categories = np.unique(items[:,self.iff:])
 
         if len(categories <2):
           categories = range(2)
 
-        frequencies = [np.count_nonzero(items == category,axis=0)\
+        frequencies = [np.count_nonzero(items[:,self.iff:] == category,axis=0)\
                         for category in categories]
 
         if not np.any(frequencies):
