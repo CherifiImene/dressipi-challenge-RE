@@ -193,12 +193,29 @@ class HammingDistance:
   def __init__(self):
     self.results = None
   
+  def evaluate(vector1,vector2):
+    #vectorized evaluation
+    vec_evaluation =np.vectorize(HammingDistance.evaluate_,
+                                    otypes=[int],
+                                    signature='(m),(m)->()')
+    return vec_evaluation(vector1,vector2)
+
   # TODO write a test for this function
-  def evaluate(self,vector1,vector2):
+  def evaluate_(vector1,vector2):
+    if not isinstance(vector1,np.ndarray):
+      vector1 = np.array(vector1)
+
+    if not isinstance(vector2,np.ndarray):
+      vector2 = np.array(vector2)
     # both variables are binary vectors
     # the xor between them will
     # return only the different values
-    diff = (vector1!=vector2).sum()
+    assert vector1.shape == vector2.shape , f"The two vectors are of diffrent shapes: {vector1.shape}, {vector2.shape}"
+    try:
+      diff = (vector1!=vector2).sum()
+    except AttributeError as e:
+      print(f"vector1 : {vector1}, type: {type(vector1)}")
+      print(f"vector2 : {vector2}, type: {type(vector2)}")
     return diff
   
   def add_result(self,result):
